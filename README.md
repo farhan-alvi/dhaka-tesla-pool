@@ -219,7 +219,7 @@ your live URL there once deployed.
 
 ## 17. Demo Video
 
-`<< add your 6-minute Loom link here before submitting >>`
+Link : https://drive.google.com/file/d/1m6bQu1DMZvzAgfOhhWPeCVg8wHJlM3VN/view?usp=sharing
 
 ## 18. Bonus: Scaling to 1M Passengers / 100k Drivers
 
