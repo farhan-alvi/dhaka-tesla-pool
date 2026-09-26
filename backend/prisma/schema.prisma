@@ -1,0 +1,136 @@
+// Dhaka Tesla Pool — database schema
+// Money is always stored as an INTEGER number of paisa (1 Taka = 100 paisa).
+// See docs/FARE_AND_MATCHING.md for why.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PASSENGER
+  DRIVER
+}
+
+enum Zone {
+  BANANI
+  GULSHAN
+  MOHAKHALI
+  DHANMONDI
+  MIRPUR
+  UTTARA
+  FARMGATE
+  BASHUNDHARA
+}
+
+enum RideStatus {
+  REQUESTED
+  MATCHED
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  WALLET
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  phone        String?
+  walletPaisa  Int      @default(100000) // simulated TeslaPay wallet, starts at 1000 Tk
+  createdAt    DateTime @default(now())
+
+  vehicle      Vehicle?       // present only if role == DRIVER
+  rideRequests RideRequest[]  // present only if role == PASSENGER
+
+  @@map("users")
+}
+
+model Vehicle {
+  id        String   @id @default(uuid())
+  driverId  String   @unique
+  driver    User     @relation(fields: [driverId], references: [id])
+  name      String   // e.g. "Bullet"
+  capacity  Int      // fixed seat count, e.g. 3
+  isOnline  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  pools     Pool[]
+
+  @@map("vehicles")
+}
+
+// A Pool represents one physical trip of a vehicle. It may carry 1..N
+// RideRequests (passengers) as long as total seats <= vehicle.capacity.
+model Pool {
+  id             String     @id @default(uuid())
+  vehicleId      String
+  vehicle        Vehicle    @relation(fields: [vehicleId], references: [id])
+  status         RideStatus @default(MATCHED)
+  seatsOccupied  Int        @default(0) // updated atomically; see pool.service.js
+  createdAt      DateTime   @default(now())
+  arrivedAt      DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+
+  rideRequests   RideRequest[]
+
+  @@map("pools")
+}
+
+model RideRequest {
+  id              String        @id @default(uuid())
+  passengerId     String
+  passenger       User          @relation(fields: [passengerId], references: [id])
+
+  pickupZone      Zone
+  destinationZone Zone
+  seats           Int           @default(1)
+
+  status          RideStatus    @default(REQUESTED)
+  poolId          String?
+  pool            Pool?         @relation(fields: [poolId], references: [id])
+
+  estimatedFarePaisa Int
+  finalFarePaisa     Int?
+  paymentMethod      PaymentMethod @default(CASH)
+
+  createdAt       DateTime      @default(now())
+  matchedAt       DateTime?
+  cancelledAt     DateTime?
+  completedAt     DateTime?
+
+  statusHistory   RideStatusEvent[]
+
+  @@index([passengerId])
+  @@index([poolId])
+  @@map("ride_requests")
+}
+
+// Append-only audit trail: "hold onto enough history to explain exactly what
+// happened, in case anyone asks later" (PRD Section 2).
+model RideStatusEvent {
+  id            String      @id @default(uuid())
+  rideRequestId String
+  rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id])
+  fromStatus    RideStatus?
+  toStatus      RideStatus
+  createdAt     DateTime    @default(now())
+  note          String?
+
+  @@index([rideRequestId])
+  @@map("ride_status_events")
+}
